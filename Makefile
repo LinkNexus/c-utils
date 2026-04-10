@@ -4,11 +4,11 @@ CFLAGS = -g -Wall -O0 -I.
 BUILD_DIR = build
 
 TEST_SRCS = $(wildcard tests/*.c)
-TEST_BINS = $(patsubst tests/%.c,$(BUILD_DIR)/test_%,$(TEST_SRCS))
+TEST_BINS = $(patsubst tests/%.c,$(BUILD_DIR)/%,$(TEST_SRCS))
 
-all: compile_commands.json test
+all: $(TEST_BINS) compile_commands.json
 
-$(BUILD_DIR)/test_%: tests/%.c
+$(BUILD_DIR)/%: tests/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< -o $@
 
