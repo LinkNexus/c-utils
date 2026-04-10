@@ -1,0 +1,37 @@
+#ifndef C_UTILS_UTILS_H
+#define C_UTILS_UTILS_H
+
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+void *xmalloc(size_t size) {
+  void *ptr = malloc(size);
+  if (!ptr) {
+    fprintf(stderr, "Memory allocation failed\n");
+    exit(EXIT_FAILURE);
+  }
+  return ptr;
+}
+
+void *xrealloc(void *ptr, size_t new_size) {
+  void *new_ptr = realloc(ptr, new_size);
+  if (!new_ptr) {
+    fprintf(stderr, "Memory reallocation failed\n");
+    exit(EXIT_FAILURE);
+  }
+  return new_ptr;
+}
+
+void *xcalloc(size_t num, size_t size) {
+  void *ptr = calloc(num, size);
+  if (!ptr) {
+    fprintf(stderr, "Memory allocation failed\n");
+    exit(EXIT_FAILURE);
+  }
+  return ptr;
+}
+
+#endif // C_UTILS_UTILS_H
