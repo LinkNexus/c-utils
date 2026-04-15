@@ -16,19 +16,19 @@ typedef struct {
   size_t size;
   size_t capacity;
   void (*val_destructor)(void *val);
-} DynArr;
+} darr;
 
-DynArr *dyn_arr_create(size_t el_size) {
-  DynArr *arr = xmalloc(sizeof *arr);
-  arr->el_size = el_size;
-  arr->size = 0;
-  arr->capacity = DYN_ARR_MIN;
-  arr->items = xmalloc(arr->capacity * arr->el_size);
-  arr->val_destructor = NULL;
-  return arr;
+darr darr_create(size_t el_size) {
+  return (darr){
+      .el_size = el_size,
+      .size = 0,
+      .capacity = DYN_ARR_MIN,
+      .items = xmalloc(DYN_ARR_MIN * el_size),
+      .val_destructor = NULL,
+  };
 }
 
-void *dyn_arr_get(const DynArr *arr, size_t idx) {
+void *darr_get(const darr *arr, size_t idx) {
   if (idx < 0 || idx >= arr->size) {
     fprintf(stderr, "Error: index out of bounds\n");
     return NULL;
@@ -36,21 +36,23 @@ void *dyn_arr_get(const DynArr *arr, size_t idx) {
   return (char *)arr->items + arr->el_size * idx;
 }
 
-void dyn_arr_destroy(DynArr *arr) {
+void darr_destroy(darr *arr) {
   if (arr->val_destructor) {
     for (size_t i = 0; i < arr->size; ++i) {
-      arr->val_destructor(dyn_arr_get(arr, i));
+      arr->val_destructor(darr_get(arr, i));
     }
   }
   free(arr->items);
-  free(arr);
+  arr->items = NULL;
+  arr->size = 0;
+  arr->capacity = 0;
 }
 
-static bool dyn_arr_reserve(DynArr *arr, size_t min_capacity) {
+static bool darr_reserve(darr *arr, size_t min_capacity) {
   if (arr->capacity >= min_capacity)
     return true;
 
-  size_t new_capacity = MAX(arr->capacity, DYN_ARR_MIN);
+  size_t new_capacity = MAX(arr->capacity, min_capacity);
 
   if (new_capacity > SIZE_MAX / arr->el_size) {
     fprintf(stderr, "Error: capacity overflow\n");
@@ -63,17 +65,17 @@ static bool dyn_arr_reserve(DynArr *arr, size_t min_capacity) {
   return true;
 }
 
-static bool dyn_arr_ensure_capacity(DynArr *arr, size_t required_size) {
+static bool darr_ensure_capacity(darr *arr, size_t required_size) {
   if (arr->capacity >= required_size)
     return true;
 
   size_t new_capacity = MAX(MAX(arr->capacity * 2, required_size), DYN_ARR_MIN);
 
-  return dyn_arr_reserve(arr, new_capacity);
+  return darr_reserve(arr, new_capacity);
 }
 
-bool dyn_arr_push_back(DynArr *arr, const void *el) {
-  if (!dyn_arr_ensure_capacity(arr, arr->size + 1)) {
+bool darr_push_back(darr *arr, const void *el) {
+  if (!darr_ensure_capacity(arr, arr->size + 1)) {
     return false;
   }
 
@@ -82,13 +84,13 @@ bool dyn_arr_push_back(DynArr *arr, const void *el) {
   return true;
 }
 
-void dyn_arr_iterate(const DynArr *arr, void (*fn)(void *el, size_t idx)) {
+void darr_iterate(const darr *arr, void (*fn)(void *el, size_t idx)) {
   for (size_t i = 0; i < arr->size; ++i) {
-    fn(dyn_arr_get(arr, i), i);
+    fn(darr_get(arr, i), i);
   }
 }
 
-void dyn_arr_adjust_capacity(DynArr *arr, size_t new_size) {
+void darr_adjust_capacity(darr *arr, size_t new_size) {
   if (new_size >= arr->capacity)
     return;
 
@@ -99,59 +101,59 @@ void dyn_arr_adjust_capacity(DynArr *arr, size_t new_size) {
   }
 }
 
-void dyn_arr_pop_back(DynArr *arr) {
+void darr_pop_back(darr *arr) {
   if (arr->size == 0)
     return;
   arr->size = arr->size - 1;
   if (arr->val_destructor)
     arr->val_destructor((char *)arr->items + arr->el_size * arr->size);
 
-  dyn_arr_adjust_capacity(arr, arr->size);
+  darr_adjust_capacity(arr, arr->size);
 }
 
-void dyn_arr_set(DynArr *arr, size_t idx, const void *el) {
+void darr_set(darr *arr, size_t idx, const void *el) {
   if (idx < 0 || idx >= arr->size)
     fprintf(stderr, "Error: index out of bounds\n");
-  memcpy(dyn_arr_get(arr, idx), el, arr->el_size);
+  memcpy(darr_get(arr, idx), el, arr->el_size);
 }
 
-bool dyn_arr_insert_at(DynArr *arr, size_t idx, const void *el) {
+bool darr_insert_at(darr *arr, size_t idx, const void *el) {
   if (idx < 0 || idx >= arr->size) {
     fprintf(stderr, "Error: index out of bounds\n");
     return false;
   }
 
-  if (!dyn_arr_ensure_capacity(arr, arr->size + 1))
+  if (!darr_ensure_capacity(arr, arr->size + 1))
     return false;
 
-  memmove(dyn_arr_get(arr, idx + 1), dyn_arr_get(arr, idx),
+  memmove(darr_get(arr, idx + 1), darr_get(arr, idx),
           (arr->size - idx) * arr->el_size);
-  memmove(dyn_arr_get(arr, idx), el, arr->el_size);
+  memmove(darr_get(arr, idx), el, arr->el_size);
 
   arr->size = arr->size + 1;
   return true;
 }
 
-bool dyn_arr_remove_at(DynArr *arr, size_t idx) {
+bool darr_remove_at(darr *arr, size_t idx) {
   if (idx < 0 || idx >= arr->size) {
     fprintf(stderr, "Error: index out of bounds\n");
     return false;
   }
 
   if (arr->val_destructor)
-    arr->val_destructor(dyn_arr_get(arr, idx));
+    arr->val_destructor(darr_get(arr, idx));
 
-  memmove(dyn_arr_get(arr, idx), dyn_arr_get(arr, idx + 1),
+  memmove(darr_get(arr, idx), darr_get(arr, idx + 1),
           (arr->size - idx - 1) * arr->el_size);
 
   arr->size = arr->size - 1;
 
-  dyn_arr_adjust_capacity(arr, arr->size);
+  darr_adjust_capacity(arr, arr->size);
   return true;
 }
 
-bool dyn_arr_append_range(DynArr *arr, const void *el, size_t count) {
-  if (!dyn_arr_ensure_capacity(arr, arr->size + count))
+bool darr_append_range(darr *arr, const void *el, size_t count) {
+  if (!darr_ensure_capacity(arr, arr->size + count))
     return false;
 
   memmove((char *)arr->items + (arr->el_size * arr->size), el,
@@ -161,25 +163,25 @@ bool dyn_arr_append_range(DynArr *arr, const void *el, size_t count) {
   return true;
 }
 
-DynArr *dyn_arr_clone(const DynArr *arr) {
+darr darr_clone(const darr *arr) {
   size_t total_size = arr->size * arr->el_size;
-  DynArr *clone = dyn_arr_create(arr->el_size);
+  darr clone = darr_create(arr->el_size);
 
-  clone->items = xmalloc(arr->capacity * arr->el_size);
-  memcpy(clone->items, arr->items, total_size);
-  clone->size = arr->size;
-  clone->capacity = arr->capacity;
+  clone.items = xmalloc(arr->capacity * arr->el_size);
+  memcpy(clone.items, arr->items, total_size);
+  clone.size = arr->size;
+  clone.capacity = arr->capacity;
 
   return clone;
 }
 
-DynArr *dyn_arr_filter(DynArr *arr, bool (*predicate)(void *el, size_t idx)) {
-  DynArr *new_arr = dyn_arr_create(arr->el_size);
+darr darr_filter(darr *arr, bool (*predicate)(void *el, size_t idx)) {
+  darr new_arr = darr_create(arr->el_size);
 
   for (size_t i = 0; i < arr->size; ++i) {
-    void *el = dyn_arr_get(arr, i);
+    void *el = darr_get(arr, i);
     if (predicate(el, i)) {
-      dyn_arr_push_back(new_arr, el);
+      darr_push_back(&new_arr, el);
     }
   }
 
