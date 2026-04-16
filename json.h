@@ -12,14 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef enum {
-  JSON_NULL,
-  JSON_BOOL,
-  JSON_NUMBER,
-  JSON_STRING,
-  JSON_ARRAY,
-  JSON_OBJECT
-} json_type;
+typedef enum { JSON_NULL, JSON_BOOL, JSON_NUMBER, JSON_STRING, JSON_ARRAY, JSON_OBJECT } JsonType;
 
 typedef enum {
   TOKEN_STRING, // 0
@@ -34,64 +27,66 @@ typedef enum {
   TOKEN_COLON,
   TOKEN_COMMA,
   TOKEN_EOF,
-} json_token_type;
+} JsonTokenType;
 
 typedef struct {
   size_t start;
   size_t len;
   size_t start_line;
   size_t start_col;
-} text_span;
+} TextSpan;
 
 typedef struct {
-  char *msg;
-  text_span span;
-} json_error;
+  char* msg;
+  TextSpan span;
+} JsonErr;
 
 typedef struct {
-  json_type type;
-  char *id;
-  text_span span;
+  JsonType type;
+  char* id;
+  TextSpan span;
   union {
     bool bool_value;
     double number_value;
-    char *string_value;
-    darr array_value;
-    ht object_value;
+    char* string_value;
+    Darr array_value;
+    HashTable object_value;
   };
-} json_value;
+} JsonValue;
 
 typedef struct {
-  const char *input;
-  json_error *err;
+  const char* input;
+  JsonErr* err;
   size_t input_len;
   size_t pos;
   size_t col;
   size_t line;
-} lexer_ctx;
+} LexerCtx;
 
 typedef struct {
-  json_token_type type;
-  char *value;
-  text_span span;
-} json_token;
+  JsonTokenType type;
+  char* value;
+  TextSpan span;
+} JsonToken;
 
 typedef struct {
-  darr *tokens;
+  Darr* tokens;
   size_t pos;
-  json_error *err;
-} parser_ctx;
+  JsonErr* err;
+} ParserCtx;
 
-static bool is_end(lexer_ctx *ctx) { return ctx->pos >= ctx->input_len; }
+static bool is_end(LexerCtx* ctx) {
+  return ctx->pos >= ctx->input_len;
+}
 
-static char peek(lexer_ctx *ctx, size_t offset) {
+static char peek(LexerCtx* ctx, size_t offset) {
   size_t idx = ctx->pos + offset;
   if (idx >= ctx->input_len)
     return '\0';
   return ctx->input[idx];
 }
 
-static void advance(lexer_ctx *ctx) {
+static void advance(LexerCtx* ctx) {
   if (is_end(ctx))
     return;
 
@@ -99,7 +94,7 @@ static void advance(lexer_ctx *ctx) {
   ctx->col++;
 }
 
-static void advance_line(lexer_ctx *ctx) {
+static void advance_line(LexerCtx* ctx) {
   if (peek(ctx, 0) == '\r') {
     advance(ctx);
 
@@ -113,56 +108,51 @@ static void advance_line(lexer_ctx *ctx) {
   ctx->col = 1;
 }
 
-static void skip_trivial_chars(lexer_ctx *ctx) {
+static void skip_trivial_chars(LexerCtx* ctx) {
   while (!is_end(ctx)) {
     char c = peek(ctx, 0);
 
     switch (c) {
-    case ' ':
-    case '\t':
-      advance(ctx);
-      break;
+      case ' ':
+      case '\t':
+        advance(ctx);
+        break;
 
-    case '\n':
-    case '\r':
-      advance_line(ctx);
-      break;
+      case '\n':
+      case '\r':
+        advance_line(ctx);
+        break;
 
-    default:
-      return;
+      default:
+        return;
     }
   }
 }
 
-static text_span capture_start(lexer_ctx *ctx) {
-  return (text_span){.start = ctx->pos,
-                     .len = 0,
-                     .start_line = ctx->line,
-                     .start_col = ctx->col};
+static TextSpan capture_start(LexerCtx* ctx) {
+  return (TextSpan){.start = ctx->pos, .len = 0, .start_line = ctx->line, .start_col = ctx->col};
 }
 
-static text_span capture_end(lexer_ctx *ctx, text_span start) {
-  return (text_span){.start = start.start,
-                     .len = ctx->pos - start.start,
-                     .start_line = start.start_line,
-                     .start_col = start.start_col};
+static TextSpan capture_end(LexerCtx* ctx, TextSpan start) {
+  return (TextSpan){.start = start.start,
+                    .len = ctx->pos - start.start,
+                    .start_line = start.start_line,
+                    .start_col = start.start_col};
 }
 
-static bool make_single(lexer_ctx *ctx, json_token *token,
-                        json_token_type type) {
-  text_span span = capture_start(ctx);
+static bool make_single(LexerCtx* ctx, JsonToken* token, JsonTokenType type) {
+  TextSpan span = capture_start(ctx);
   advance(ctx);
-  *token =
-      (json_token){.type = type, .value = NULL, .span = capture_end(ctx, span)};
+  *token = (JsonToken){.type = type, .value = NULL, .span = capture_end(ctx, span)};
   return true;
 }
 
-static int read_hex_digits(lexer_ctx *ctx) {
+static int read_hex_digits(LexerCtx* ctx) {
   int value = 0;
 
   for (int i = 0; i < 4; ++i) {
     if (is_end(ctx)) {
-      *ctx->err = (json_error){
+      *ctx->err = (JsonErr){
           .msg = strdup("Unexpected end of input in Unicode escape sequence"),
           .span = capture_start(ctx),
       };
@@ -179,7 +169,7 @@ static int read_hex_digits(lexer_ctx *ctx) {
     } else if (c >= 'A' && c <= 'F') {
       value |= (c - 'A' + 10);
     } else {
-      *ctx->err = (json_error){
+      *ctx->err = (JsonErr){
           .msg = strdup("Invalid character in Unicode escape sequence"),
           .span = capture_start(ctx),
       };
@@ -192,8 +182,8 @@ static int read_hex_digits(lexer_ctx *ctx) {
   return value;
 }
 
-static bool read_string(lexer_ctx *ctx, json_token *token) {
-  text_span start = capture_start(ctx);
+static bool read_string(LexerCtx* ctx, JsonToken* token) {
+  TextSpan start = capture_start(ctx);
   advance(ctx); // Skip opening quote
 
   dstr value = dstr_create();
@@ -202,92 +192,91 @@ static bool read_string(lexer_ctx *ctx, json_token *token) {
     char c = peek(ctx, 0);
 
     switch (c) {
-    case '\\':
-      advance(ctx);
-
-      if (is_end(ctx)) {
-        *ctx->err = (json_error){
-            .msg = strdup("Unexpected end of input in string escape sequence"),
-            .span = capture_end(ctx, start),
-        };
-      }
-
-      char escaped = peek(ctx, 0);
-
-      switch (escaped) {
-      case '"':
       case '\\':
-      case '/':
-        dstr_append_char(&value, escaped);
-        break;
-      case 'b':
-        dstr_append_char(&value, '\b');
-        break;
-      case 'f':
-        dstr_append_char(&value, '\f');
-        break;
-      case 'n':
-        dstr_append_char(&value, '\n');
-        break;
-      case 'r':
-        dstr_append_char(&value, '\r');
-        break;
-      case 't':
-        dstr_append_char(&value, '\t');
-        break;
-      case 'u': {
         advance(ctx);
-        int unicode_val = read_hex_digits(ctx);
-        if (unicode_val < 0) {
-          *ctx->err = (json_error){
-              .msg = strdup("Invalid Unicode escape sequence in string"),
+
+        if (is_end(ctx)) {
+          *ctx->err = (JsonErr){
+              .msg = strdup("Unexpected end of input in string escape sequence"),
               .span = capture_end(ctx, start),
           };
-          return false;
         }
-        dstr_append_char(&value, (char)unicode_val);
-        break;
-      }
-      default: {
-        dstr msg =
-            dstr_fmt("Invalid escape character %c in string literal", escaped);
-        *ctx->err = (json_error){
-            .msg = dstr_to_cstr(msg),
+
+        char escaped = peek(ctx, 0);
+
+        switch (escaped) {
+          case '"':
+          case '\\':
+          case '/':
+            dstr_append_char(&value, escaped);
+            break;
+          case 'b':
+            dstr_append_char(&value, '\b');
+            break;
+          case 'f':
+            dstr_append_char(&value, '\f');
+            break;
+          case 'n':
+            dstr_append_char(&value, '\n');
+            break;
+          case 'r':
+            dstr_append_char(&value, '\r');
+            break;
+          case 't':
+            dstr_append_char(&value, '\t');
+            break;
+          case 'u': {
+            advance(ctx);
+            int unicode_val = read_hex_digits(ctx);
+            if (unicode_val < 0) {
+              *ctx->err = (JsonErr){
+                  .msg = strdup("Invalid Unicode escape sequence in string"),
+                  .span = capture_end(ctx, start),
+              };
+              return false;
+            }
+            dstr_append_char(&value, (char)unicode_val);
+            break;
+          }
+          default: {
+            dstr msg = dstr_fmt("Invalid escape character %c in string literal", escaped);
+            *ctx->err = (JsonErr){
+                .msg = dstr_to_cstr(msg),
+                .span = capture_end(ctx, start),
+            };
+            dstr_destroy(msg);
+            return false;
+          }
+        }
+
+        continue;
+
+      case '\n':
+      case '\r':
+        *ctx->err = (JsonErr){
+            .msg = strdup("Unescaped newline in string literal"),
             .span = capture_end(ctx, start),
         };
-        dstr_destroy(msg);
         return false;
-      }
-      }
 
-      continue;
+      case '"':
+        advance(ctx); // Skip closing quote
+        *token = (JsonToken){
+            .type = TOKEN_STRING,
+            .value = dstr_to_cstr(value),
+            .span = capture_end(ctx, start),
+        };
+        dstr_destroy(value);
+        return true;
 
-    case '\n':
-    case '\r':
-      *ctx->err = (json_error){
-          .msg = strdup("Unescaped newline in string literal"),
-          .span = capture_end(ctx, start),
-      };
-      return false;
-
-    case '"':
-      advance(ctx); // Skip closing quote
-      *token = (json_token){
-          .type = TOKEN_STRING,
-          .value = dstr_to_cstr(value),
-          .span = capture_end(ctx, start),
-      };
-      dstr_destroy(value);
-      return true;
-
-    default:
-      dstr_append_char(&value, c);
-      advance(ctx);
-      break;
+      default:
+        dstr_append_char(&value, c);
+        advance(ctx);
+        break;
     }
   }
 
-  *ctx->err = (json_error){
+  *ctx->err = (JsonErr){
       .msg = strdup("Unexpected end of input in string literal"),
       .span = capture_end(ctx, start),
   };
@@ -295,8 +284,8 @@ static bool read_string(lexer_ctx *ctx, json_token *token) {
   return false;
 }
 
-static bool read_number(lexer_ctx *ctx, json_token *token) {
-  text_span start = capture_start(ctx);
+static bool read_number(LexerCtx* ctx, JsonToken* token) {
+  TextSpan start = capture_start(ctx);
   dstr num_str = dstr_create();
 
   if (peek(ctx, 0) == '-')
@@ -311,7 +300,7 @@ static bool read_number(lexer_ctx *ctx, json_token *token) {
       advance(ctx);
     }
   } else {
-    *ctx->err = (json_error){
+    *ctx->err = (JsonErr){
         .msg = strdup("Invalid number format: expected digit after '-'"),
         .span = capture_end(ctx, start),
     };
@@ -324,7 +313,7 @@ static bool read_number(lexer_ctx *ctx, json_token *token) {
     advance(ctx);
 
     if (!isdigit(peek(ctx, 0))) {
-      *ctx->err = (json_error){
+      *ctx->err = (JsonErr){
           .msg = strdup("Invalid number format: expected digit after '.'"),
           .span = capture_end(ctx, start),
       };
@@ -348,7 +337,7 @@ static bool read_number(lexer_ctx *ctx, json_token *token) {
     }
 
     if (!isdigit(peek(ctx, 0))) {
-      *ctx->err = (json_error){
+      *ctx->err = (JsonErr){
           .msg = strdup("Invalid number format: expected digit in exponent"),
           .span = capture_end(ctx, start),
       };
@@ -362,13 +351,13 @@ static bool read_number(lexer_ctx *ctx, json_token *token) {
     }
   }
 
-  text_span span = capture_end(ctx, start);
-  char *num_cstr = dstr_to_cstr(num_str);
-  char *endptr;
+  TextSpan span = capture_end(ctx, start);
+  char* num_cstr = dstr_to_cstr(num_str);
+  char* endptr;
   strtod(num_cstr, &endptr);
 
   if (*endptr != '\0') {
-    *ctx->err = (json_error){
+    *ctx->err = (JsonErr){
         .msg = strdup("Invalid number format: could not parse entire number"),
         .span = span,
     };
@@ -377,7 +366,7 @@ static bool read_number(lexer_ctx *ctx, json_token *token) {
     return false;
   }
 
-  *token = (json_token){
+  *token = (JsonToken){
       .type = TOKEN_NUMBER,
       .value = num_cstr,
       .span = span,
@@ -386,19 +375,19 @@ static bool read_number(lexer_ctx *ctx, json_token *token) {
   return true;
 }
 
-static bool remaining_starts_with(lexer_ctx *ctx, const char *str) {
+static bool remaining_starts_with(LexerCtx* ctx, const char* str) {
   strv strv = strv_from(ctx->input + ctx->pos);
   return strv_starts_with(strv, strv_from(str));
 }
 
-static bool match_keyword(lexer_ctx *ctx, const char *keyword,
-                          json_token_type type, json_token *token) {
+static bool match_keyword(LexerCtx* ctx, const char* keyword, JsonTokenType type,
+                          JsonToken* token) {
   if (remaining_starts_with(ctx, keyword)) {
-    text_span span = capture_start(ctx);
+    TextSpan span = capture_start(ctx);
     for (size_t i = 0; keyword[i] != '\0'; ++i)
       advance(ctx);
 
-    *token = (json_token){
+    *token = (JsonToken){
         .type = type,
         .value = NULL,
         .span = capture_end(ctx, span),
@@ -409,30 +398,28 @@ static bool match_keyword(lexer_ctx *ctx, const char *keyword,
   return false;
 }
 
-static bool read_keyword(lexer_ctx *ctx, json_token *token) {
+static bool read_keyword(LexerCtx* ctx, JsonToken* token) {
   if (match_keyword(ctx, "true", TOKEN_TRUE, token) ||
       match_keyword(ctx, "false", TOKEN_FALSE, token) ||
       match_keyword(ctx, "null", TOKEN_NULL, token))
     return true;
 
-  *ctx->err = (json_error){
+  *ctx->err = (JsonErr){
       .msg = strdup("Unexpected token: expected 'true', 'false', or 'null'"),
       .span = capture_start(ctx),
   };
   return false;
 }
 
-static bool lexer_next(lexer_ctx *ctx, json_token *token) {
+static bool lexer_next(LexerCtx* ctx, JsonToken* token) {
   skip_trivial_chars(ctx);
 
   if (is_end(ctx)) {
-    *token = (json_token){
+    *token = (JsonToken){
         .type = TOKEN_EOF,
         .value = NULL,
-        .span = (text_span){.start = ctx->pos,
-                            .len = 0,
-                            .start_line = ctx->line,
-                            .start_col = ctx->col},
+        .span =
+            (TextSpan){.start = ctx->pos, .len = 0, .start_line = ctx->line, .start_col = ctx->col},
     };
     return true;
   }
@@ -440,30 +427,30 @@ static bool lexer_next(lexer_ctx *ctx, json_token *token) {
   char c = peek(ctx, 0);
 
   switch (c) {
-  case '{':
-    return make_single(ctx, token, TOKEN_LBRACE);
-  case '}':
-    return make_single(ctx, token, TOKEN_RBRACE);
-  case '[':
-    return make_single(ctx, token, TOKEN_LBRACKET);
-  case ']':
-    return make_single(ctx, token, TOKEN_RBRACKET);
-  case ':':
-    return make_single(ctx, token, TOKEN_COLON);
-  case ',':
-    return make_single(ctx, token, TOKEN_COMMA);
-  case '"':
-    return read_string(ctx, token);
-  case '-':
-  case '0' ... '9':
-    return read_number(ctx, token);
-  default:
-    return read_keyword(ctx, token);
+    case '{':
+      return make_single(ctx, token, TOKEN_LBRACE);
+    case '}':
+      return make_single(ctx, token, TOKEN_RBRACE);
+    case '[':
+      return make_single(ctx, token, TOKEN_LBRACKET);
+    case ']':
+      return make_single(ctx, token, TOKEN_RBRACKET);
+    case ':':
+      return make_single(ctx, token, TOKEN_COLON);
+    case ',':
+      return make_single(ctx, token, TOKEN_COMMA);
+    case '"':
+      return read_string(ctx, token);
+    case '-':
+    case '0' ... '9':
+      return read_number(ctx, token);
+    default:
+      return read_keyword(ctx, token);
   }
 }
 
-static bool tokenize(const char *input, darr *tokens, json_error *err) {
-  lexer_ctx ctx = {
+static bool tokenize(const char* input, Darr* tokens, JsonErr* err) {
+  LexerCtx ctx = {
       .input = input,
       .err = err,
       .input_len = strlen(input),
@@ -473,7 +460,7 @@ static bool tokenize(const char *input, darr *tokens, json_error *err) {
   };
 
   while (true) {
-    json_token *token = xmalloc(sizeof *token);
+    JsonToken* token = xmalloc(sizeof *token);
 
     if (!lexer_next(&ctx, token)) {
       free(token);
@@ -488,22 +475,22 @@ static bool tokenize(const char *input, darr *tokens, json_error *err) {
   return true;
 }
 
-void destroy_token(json_token *token) {
+void destroy_token(JsonToken* token) {
   if (token->value)
     free(token->value);
   free(token);
 }
 
-static json_token *current_token(parser_ctx *ctx) {
+static JsonToken* current_token(ParserCtx* ctx) {
   return darr_get(ctx->tokens, ctx->pos);
 }
 
-static json_token *eat(parser_ctx *ctx, json_token_type expected) {
-  json_token *token = current_token(ctx);
+static JsonToken* eat(ParserCtx* ctx, JsonTokenType expected) {
+  JsonToken* token = current_token(ctx);
   if (!token || token->type != expected) {
-    *ctx->err = (json_error){
+    *ctx->err = (JsonErr){
         .msg = strdup("Unexpected token"),
-        .span = token ? token->span : (text_span){.start = 0, .len = 0},
+        .span = token ? token->span : (TextSpan){.start = 0, .len = 0},
     };
     return NULL;
   }
@@ -511,114 +498,198 @@ static json_token *eat(parser_ctx *ctx, json_token_type expected) {
   return token;
 }
 
-text_span combine(text_span start, text_span end) {
-  return (text_span){.start = MIN(start.start, end.start),
-                     .len = ABS(end.start - start.start),
-                     .start_line = MIN(start.start, end.start_line),
-                     .start_col = MIN(start.start, end.start_col)};
+TextSpan combine(TextSpan start, TextSpan end) {
+  return (TextSpan){.start = MIN(start.start, end.start),
+                    .len = ABS(end.start - start.start),
+                    .start_line = MIN(start.start, end.start_line),
+                    .start_col = MIN(start.start, end.start_col)};
 }
 
-void destroy_json_value(json_value *value) {
-  if (!value)
-    return;
-
+void destroy_json_value(JsonValue* value) {
   switch (value->type) {
-  case JSON_STRING:
-    free(value->string_value);
-    break;
-  case JSON_ARRAY:
-    darr_destroy(&value->array_value);
-    break;
-  case JSON_OBJECT:
-    ht_iter iter = ht_iter_create(&value->object_value);
-    while (ht_iter_next(&iter)) {
-      json_value *prop_val = iter.value;
-      destroy_json_value(prop_val);
-    }
-    ht_destroy(&value->object_value);
-    break;
-  default:
-    break;
+    case JSON_ARRAY:
+      darr_destroy(&value->array_value);
+      break;
+    case JSON_OBJECT:
+      ht_destroy(&value->object_value);
+      break;
+    case JSON_STRING:
+      free(value->string_value);
+      break;
+  }
+}
+
+static bool parse_object(ParserCtx* ctx, JsonValue* out, char* id);
+static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id);
+
+static bool parse_null(ParserCtx* ctx, JsonValue* out, char* id) {
+  JsonToken* token = eat(ctx, TOKEN_NULL);
+  if (!token)
+    return false;
+
+  *out = (JsonValue){
+      .type = JSON_NULL,
+      .id = strdup(id),
+      .span = token->span,
+  };
+  return true;
+}
+
+static bool parse_number(ParserCtx* ctx, JsonValue* out, char* id) {
+  JsonToken* token = eat(ctx, TOKEN_NUMBER);
+  if (!token)
+    return false;
+
+  char* endptr;
+  double num = strtod(token->value, &endptr);
+  if (*endptr != '\0') {
+    *ctx->err = (JsonErr){
+        .msg = strdup("Invalid number format: could not parse entire number"),
+        .span = token->span,
+    };
+    return false;
   }
 
-  free(value->id);
-  free(value);
+  *out = (JsonValue){
+      .type = JSON_NUMBER,
+      .id = strdup(id),
+      .span = token->span,
+      .number_value = num,
+  };
+  return true;
 }
 
-static bool parse_object(parser_ctx *ctx, json_value *output, char *id);
-static bool parse_array(parser_ctx *ctx, json_value *output, char *id);
+static bool parse_bool(ParserCtx* ctx, JsonValue* out, bool val, char* id) {
+  JsonToken* token = eat(ctx, val ? TOKEN_TRUE : TOKEN_FALSE);
+  if (!token)
+    return false;
 
-static bool parse_value(parser_ctx *ctx, json_value *output, char *id) {
-  json_token *token = darr_get(ctx->tokens, ctx->pos);
+  *out = (JsonValue){
+      .type = JSON_BOOL,
+      .id = strdup(id),
+      .span = token->span,
+      .bool_value = val,
+  };
+  return true;
+}
+
+static bool parse_string(ParserCtx* ctx, JsonValue* out, char* id) {
+  JsonToken* token = eat(ctx, TOKEN_STRING);
+  if (!token)
+    return false;
+
+  *out = (JsonValue){
+      .type = JSON_STRING,
+      .id = strdup(id),
+      .span = token->span,
+      .string_value = strdup(token->value),
+  };
+  return true;
+}
+
+static bool parse_value(ParserCtx* ctx, JsonValue* output, char* id) {
+  JsonToken* token = darr_get(ctx->tokens, ctx->pos);
 
   if (!token) {
-    *ctx->err = (json_error){
+    *ctx->err = (JsonErr){
         .msg = strdup("Unexpected end of input while parsing value"),
-        .span =
-            (text_span){.start = 0, .len = 0, .start_line = 0, .start_col = 0},
+        .span = (TextSpan){.start = 0, .len = 0, .start_line = 0, .start_col = 0},
     };
     return false;
   }
 
   switch (token->type) {
-  case TOKEN_LBRACE:
-    return parse_object(ctx, output, id);
-  case TOKEN_LBRACKET:
-    return parse_array(ctx, output);
-  case TOKEN_STRING:
-    return parse_string(ctx, output);
-  case TOKEN_NUMBER:
-    return parse_number(ctx, output);
-  case TOKEN_TRUE:
-  case TOKEN_FALSE:
-    return parse_bool(ctx, output);
-  case TOKEN_NULL:
-    return parse_null(ctx, output);
-  default:
-    *ctx->err = (json_error){
-        .msg = strdup("Unexpected token while parsing value"),
-        .span = token->span,
-    };
-    return false;
+    case TOKEN_LBRACE:
+      return parse_object(ctx, output, id);
+    case TOKEN_LBRACKET:
+      return parse_array(ctx, output, id);
+    case TOKEN_STRING:
+      return parse_string(ctx, output, id);
+    case TOKEN_NUMBER:
+      return parse_number(ctx, output, id);
+    case TOKEN_TRUE:
+      return parse_bool(ctx, output, true, id);
+    case TOKEN_FALSE:
+      return parse_bool(ctx, output, false, id);
+    case TOKEN_NULL:
+      return parse_null(ctx, output, id);
+    default:
+      *ctx->err = (JsonErr){
+          .msg = strdup("Unexpected token while parsing value"),
+          .span = token->span,
+      };
+      return false;
   }
 }
 
-static bool parse_array(parser_ctx *ctx, json_value *output, char *id) {
-  json_token *start = eat(ctx, TOKEN_LBRACKET);
-  darr items = darr_create(sizeof(json_value));
+static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id) {
+  JsonToken* start = eat(ctx, TOKEN_LBRACKET);
+  Darr elements = darr_create(sizeof(JsonValue));
+  elements.val_destructor = (void (*)(void*))destroy_json_value;
 
-  if (current_token(ctx)->type == TOKEN_RBRACKET) {
-    json_token *end = eat(ctx, TOKEN_RBRACKET);
-    *output = (json_value){
+  if (current_token(ctx)->type == TOKEN_LBRACKET) {
+    JsonToken* end = eat(ctx, TOKEN_RBRACKET);
+    *out = (JsonValue){
         .type = JSON_ARRAY,
-        .id = id ? strdup(id) : NULL,
+        .id = strdup(id),
         .span = combine(start->span, end->span),
-        .array_value = items,
+        .array_value = elements,
     };
     return true;
   }
 
-  size_t index = 0;
+  size_t idx = 0;
   while (true) {
-    char *item_id = dstr_fmt("%s[%zu]", id, index);
-    json_value *item = xmalloc(sizeof(json_value));
-    if (!parse_value(ctx, item, item_id)) {
-      darr_destroy(&items);
-      free(item_id);
+    dstr item_id = dstr_fmt("%s[%zu]", id, idx);
+    JsonValue* element = xmalloc(sizeof(JsonValue));
+
+    if (!parse_value(ctx, element, item_id)) {
+      free(element);
+      dstr_destroy(item_id);
+      darr_destroy(&elements);
       return false;
+    }
+
+    switch (current_token(ctx)->type) {
+      case TOKEN_COMMA:
+        eat(ctx, TOKEN_COMMA);
+        idx++;
+        dstr_destroy(item_id);
+        continue;
+      case TOKEN_RBRACKET: {
+        JsonToken* end = eat(ctx, TOKEN_RBRACKET);
+        *out = (JsonValue){
+            .type = JSON_ARRAY,
+            .id = strdup(id),
+            .span = combine(start->span, end->span),
+            .array_value = elements,
+        };
+        dstr_destroy(item_id);
+        return true;
+      }
+      default:
+        *ctx->err = (JsonErr){
+            .msg = strdup("Expected ',' or ']' in array literal"),
+            .span = current_token(ctx)->span,
+        };
+        free(element);
+        dstr_destroy(item_id);
+        darr_destroy(&elements);
+        return false;
     }
   }
 }
 
-static bool parse_object(parser_ctx *ctx, json_value *output, char *id) {
-  json_token *start = eat(ctx, TOKEN_LBRACE);
-  ht props = ht_create(sizeof(json_value));
+static bool parse_object(ParserCtx* ctx, JsonValue* out, char* id) {
+  JsonToken* start = eat(ctx, TOKEN_LBRACE);
+  HashTable props = ht_create(sizeof(JsonValue));
+  props.val_destructor = (void (*)(void*))destroy_json_value;
 
   if (current_token(ctx)->type == TOKEN_RBRACE) {
-    json_token *end = eat(ctx, TOKEN_RBRACE);
-    *output = (json_value){
+    JsonToken* end = eat(ctx, TOKEN_RBRACE);
+    *out = (JsonValue){
         .type = JSON_OBJECT,
-        .id = id ? strdup(id) : NULL,
+        .id = strdup(id),
         .span = combine(start->span, end->span),
         .object_value = props,
     };
@@ -626,8 +697,7 @@ static bool parse_object(parser_ctx *ctx, json_value *output, char *id) {
   }
 
   while (true) {
-    json_token *key_token = eat(ctx, TOKEN_STRING);
-
+    JsonToken* key_token = eat(ctx, TOKEN_STRING);
     if (!key_token) {
       ht_destroy(&props);
       return false;
@@ -635,54 +705,101 @@ static bool parse_object(parser_ctx *ctx, json_value *output, char *id) {
 
     dstr key = dstr_fmt("%s.%s", id, key_token->value);
     eat(ctx, TOKEN_COLON);
-
-    json_value *value = xmalloc(sizeof(json_value));
-    if (!parse_value(ctx, value)) {
+    JsonValue* value = xmalloc(sizeof(JsonValue));
+    if (!parse_value(ctx, value, key)) {
+      free(value);
+      dstr_destroy(key);
       ht_destroy(&props);
       return false;
     }
-    ht_set(&props, key_token->value, &value);
+
+    ht_set(&props, key, value);
 
     switch (current_token(ctx)->type) {
-    case TOKEN_COMMA:
-      eat(ctx, TOKEN_COMMA);
-      break;
-
-    case TOKEN_RBRACE: {
-      json_token *end = eat(ctx, TOKEN_RBRACE);
-      *output = (json_value){
-          .type = JSON_OBJECT,
-          .id = strdup(id),
-          .span = combine(start->span, end->span),
-          .object_value = props,
-      };
-      return true;
-    }
-
-    default:
-      *ctx->err = (json_error){
-          .msg = strdup("Expected ',' or '}' after object property"),
-          .span = current_token(ctx)->span,
-      };
-      ht_destroy(&props);
-      return false;
+      case TOKEN_COMMA:
+        eat(ctx, TOKEN_COMMA);
+        dstr_destroy(key);
+        break;
+      case TOKEN_RBRACE: {
+        JsonToken* end = eat(ctx, TOKEN_RBRACE);
+        *out = (JsonValue){
+            .type = JSON_OBJECT,
+            .id = strdup(id),
+            .span = combine(start->span, end->span),
+            .object_value = props,
+        };
+        dstr_destroy(key);
+        return true;
+      }
+      default:
+        *ctx->err = (JsonErr){
+            .msg = strdup("Expected ',' or '}' in object literal"),
+            .span = current_token(ctx)->span,
+        };
+        dstr_destroy(key);
+        ht_destroy(&props);
+        return false;
     }
   }
 }
 
-static bool json_parse(const char *input, json_value *output, char **err_msg) {
-  json_error err = {0};
-  darr tokens = darr_create(sizeof(json_token));
-  tokens.val_destructor = (void (*)(void *))destroy_token;
+bool json_free(JsonValue* value) {
+  destroy_json_value(value);
+  free(value);
+  return true;
+}
+
+bool json_get(JsonValue* value, const char* path, JsonValue** out) {
+  char* dot = strchr(path, '.');
+  size_t key_len = dot ? (size_t)(dot - path) : strlen(path);
+  char key[key_len + 1];
+  strncpy(key, path, key_len);
+  key[key_len] = '\0';
+
+  if (value->type != JSON_OBJECT) {
+    return false;
+  }
+
+  JsonValue* prop = ht_get(&value->object_value, key);
+  if (!prop) {
+    return false;
+  }
+
+  if (dot) {
+    return json_get(prop, dot + 1, out);
+  } else {
+    *out = prop;
+    return true;
+  }
+}
+
+bool json_parse(const char* input, JsonValue* out, char** err_msg) {
+  JsonErr err = {0};
+  Darr tokens = darr_create(sizeof(JsonToken));
+  tokens.val_destructor = (void (*)(void*))destroy_token;
 
   if (!tokenize(input, &tokens, &err)) {
-    dstr msg = dstr_fmt("Error at line %zu, column %zu: %s",
-                        err.span.start_line, err.span.start_col, err.msg);
+    dstr msg = dstr_fmt("Error at line %zu, column %zu: %s", err.span.start_line,
+                        err.span.start_col, err.msg);
     *err_msg = strdup(msg);
     darr_destroy(&tokens);
     free(err.msg);
     dstr_destroy(msg);
     return false;
+  }
+
+  ParserCtx parser_ctx = {
+      .tokens = &tokens,
+      .pos = 0,
+      .err = &err,
+  };
+
+  if (!parse_value(&parser_ctx, out, "$")) {
+    dstr msg = dstr_fmt("Error at line %zu, column %zu: %s", err.span.start_line,
+                        err.span.start_col, err.msg);
+    *err_msg = strdup(msg);
+    free(err.msg);
+    dstr_destroy(msg);
   }
 
   darr_destroy(&tokens);

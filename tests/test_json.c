@@ -3,13 +3,13 @@
 #include <stdio.h>
 
 int main(void) {
-  const char *json_str =
-      "{\"name\": \"Alice\", \"age\": 30, \"is_student\": fal}";
+  const char* json_str = "{\"name\": \"Alice\", \"age\": 30, \"is_student\": false, \"skills\": "
+                         "[\"C\", \"Python\" \"JavaScript\"]}";
 
   printf("Testing JSON parsing with invalid input...\n");
 
-  json_value json_val;
-  char *err_msg;
+  JsonValue json_val;
+  char* err_msg;
   //
   bool res = json_parse(json_str, &json_val, &err_msg);
 
