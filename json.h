@@ -627,7 +627,7 @@ static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id) {
   Darr elements = darr_create(sizeof(JsonValue));
   elements.val_destructor = (void (*)(void*))destroy_json_value;
 
-  if (current_token(ctx)->type == TOKEN_LBRACKET) {
+  if (current_token(ctx)->type == TOKEN_RBRACKET) {
     JsonToken* end = eat(ctx, TOKEN_RBRACKET);
     *out = (JsonValue){
         .type = JSON_ARRAY,
@@ -650,11 +650,13 @@ static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id) {
       return false;
     }
 
+    darr_push_back(&elements, element);
+
     switch (current_token(ctx)->type) {
       case TOKEN_COMMA:
         eat(ctx, TOKEN_COMMA);
         idx++;
-        dstr_destroy(item_id);
+        // dstr_destroy(item_id);
         continue;
       case TOKEN_RBRACKET: {
         JsonToken* end = eat(ctx, TOKEN_RBRACKET);
@@ -800,6 +802,7 @@ bool json_parse(const char* input, JsonValue* out, char** err_msg) {
     *err_msg = strdup(msg);
     free(err.msg);
     dstr_destroy(msg);
+    return false;
   }
 
   darr_destroy(&tokens);
