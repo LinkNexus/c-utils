@@ -3,11 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void print_el(void* el, size_t idx) {
+void print_el(const void* el, size_t idx) {
   printf("El at idx %zu is %d\n", idx, *(int*)el);
 }
 
-bool is_even(void* el, size_t idx) {
+bool is_even(const void* el, size_t idx) {
   return *(int*)el % 2 == 0;
 }
 

@@ -1,26 +1,27 @@
 #ifndef C_UTILS_STRV_H
 #define C_UTILS_STRV_H
 
+#include "darr.h"
 #include "dstr.h"
 #include <stddef.h>
 #include <string.h>
 
 typedef struct {
-  const char *data;
+  const char* data;
   size_t len;
 } strv;
 
-strv strv_from(const char *str) {
+strv strv_from(const char* str) {
   size_t len = strlen(str);
   return (strv){.data = str, .len = len};
 }
 
-strv strv_from_len(const char *str, size_t len) {
+strv strv_from_len(const char* str, size_t len) {
   return (strv){.data = str, .len = len};
 }
 
 strv strv_from_dstr(const dstr str) {
-  dstr_hdr *hdr = DSTR_HDR(str);
+  dstr_hdr* hdr = DSTR_HDR(str);
   return (strv){.data = str, .len = hdr->len};
 }
 
@@ -39,7 +40,9 @@ int strv_cmp(const strv a, const strv b) {
   }
 }
 
-bool strv_eq(const strv a, const strv b) { return strv_cmp(a, b) == 0; }
+bool strv_eq(const strv a, const strv b) {
+  return strv_cmp(a, b) == 0;
+}
 
 strv strv_substr(const strv str, size_t start, size_t len) {
   if (start > str.len) {
@@ -96,14 +99,12 @@ bool strv_ends_with(const strv str, const strv suffix) {
   if (str.len < suffix.len) {
     return false;
   }
-  return strv_cmp(strv_substr(str, str.len - suffix.len, suffix.len), suffix) ==
-         0;
+  return strv_cmp(strv_substr(str, str.len - suffix.len, suffix.len), suffix) == 0;
 }
 
 strv strv_trim_left(const strv str) {
   size_t start = 0;
-  while (start < str.len &&
-         (str.data[start] == ' ' || str.data[start] == '\t')) {
+  while (start < str.len && (str.data[start] == ' ' || str.data[start] == '\t')) {
     start++;
   }
   return strv_substr(str, start, str.len - start);
@@ -117,6 +118,72 @@ strv strv_trim_right(const strv str) {
   return strv_substr(str, 0, end);
 }
 
-strv strv_trim(const strv str) { return strv_trim_right(strv_trim_left(str)); }
+strv strv_trim(const strv str) {
+  return strv_trim_right(strv_trim_left(str));
+}
+
+Darr strv_split(const strv str, const char delim) {
+  Darr parts = darr_create(sizeof(strv));
+  size_t start = 0;
+
+  for (size_t i = 0; i < str.len; ++i) {
+    if (str.data[i] == delim) {
+      strv sub_str = strv_substr(str, start, i - start);
+      darr_push_back(&parts, &sub_str);
+      start = i + 1;
+    }
+  }
+
+  strv sub_str = strv_substr(str, start, str.len - start);
+  if (sub_str.len > 0 || str.data[str.len - 1] == delim) {
+    darr_push_back(&parts, &sub_str);
+  }
+
+  return parts;
+}
+
+Darr strv_split_str(const strv str, const strv delim) {
+  Darr parts = darr_create(sizeof(strv));
+  size_t start = 0;
+
+  while (start <= str.len) {
+    size_t idx = strv_find(strv_substr(str, start, str.len - start), delim);
+    if (idx == (size_t)-1) {
+      break;
+    }
+    strv sub_str = strv_substr(str, start, idx);
+    darr_push_back(&parts, &sub_str);
+    start += idx + delim.len;
+  }
+
+  strv sub_str = strv_substr(str, start, str.len - start);
+  if (sub_str.len > 0 || (str.len >= delim.len &&
+                          strv_cmp(strv_substr(str, str.len - delim.len, delim.len), delim) == 0)) {
+    darr_push_back(&parts, &sub_str);
+  }
+
+  return parts;
+}
+
+Darr strv_split_any(const strv str, const strv char_set) {
+  Darr parts = darr_create(sizeof(strv));
+  size_t start = 0;
+
+  for (size_t i = 0; i < str.len; ++i) {
+    if (strv_find_char(char_set, str.data[i]) != (size_t)-1) {
+      strv sub_str = strv_substr(str, start, i - start);
+      darr_push_back(&parts, &sub_str);
+      start = i + 1;
+    }
+  }
+
+  strv sub_str = strv_substr(str, start, str.len - start);
+  if (sub_str.len > 0 ||
+      (str.len > 0 && strv_find_char(char_set, str.data[str.len - 1]) != (size_t)-1)) {
+    darr_push_back(&parts, &sub_str);
+  }
+
+  return parts;
+}
 
 #endif // !DEBUG

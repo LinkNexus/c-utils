@@ -6,7 +6,6 @@
 #include "ht.h"
 #include "strv.h"
 #include "utils.h"
-#include <complex.h>
 #include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -15,18 +14,18 @@
 typedef enum { JSON_NULL, JSON_BOOL, JSON_NUMBER, JSON_STRING, JSON_ARRAY, JSON_OBJECT } JsonType;
 
 typedef enum {
-  TOKEN_STRING, // 0
-  TOKEN_NUMBER,
-  TOKEN_TRUE,
-  TOKEN_FALSE,
-  TOKEN_NULL,
-  TOKEN_LBRACE,
-  TOKEN_RBRACE,
-  TOKEN_LBRACKET,
-  TOKEN_RBRACKET,
-  TOKEN_COLON,
-  TOKEN_COMMA,
-  TOKEN_EOF,
+  JSON_TOKEN_STRING, // 0
+  JSON_TOKEN_NUMBER,
+  JSON_TOKEN_TRUE,
+  JSON_TOKEN_FALSE,
+  JSON_TOKEN_NULL,
+  JSON_TOKEN_LBRACE,
+  JSON_TOKEN_RBRACE,
+  JSON_TOKEN_LBRACKET,
+  JSON_TOKEN_RBRACKET,
+  JSON_TOKEN_COLON,
+  JSON_TOKEN_COMMA,
+  JSON_TOKEN_EOF,
 } JsonTokenType;
 
 typedef struct {
@@ -209,21 +208,27 @@ static bool read_string(LexerCtx* ctx, JsonToken* token) {
           case '\\':
           case '/':
             dstr_append_char(&value, escaped);
+            advance(ctx);
             break;
           case 'b':
             dstr_append_char(&value, '\b');
+            advance(ctx);
             break;
           case 'f':
             dstr_append_char(&value, '\f');
+            advance(ctx);
             break;
           case 'n':
             dstr_append_char(&value, '\n');
+            advance(ctx);
             break;
           case 'r':
             dstr_append_char(&value, '\r');
+            advance(ctx);
             break;
           case 't':
             dstr_append_char(&value, '\t');
+            advance(ctx);
             break;
           case 'u': {
             advance(ctx);
@@ -262,7 +267,7 @@ static bool read_string(LexerCtx* ctx, JsonToken* token) {
       case '"':
         advance(ctx); // Skip closing quote
         *token = (JsonToken){
-            .type = TOKEN_STRING,
+            .type = JSON_TOKEN_STRING,
             .value = dstr_to_cstr(value),
             .span = capture_end(ctx, start),
         };
@@ -367,7 +372,7 @@ static bool read_number(LexerCtx* ctx, JsonToken* token) {
   }
 
   *token = (JsonToken){
-      .type = TOKEN_NUMBER,
+      .type = JSON_TOKEN_NUMBER,
       .value = num_cstr,
       .span = span,
   };
@@ -399,9 +404,9 @@ static bool match_keyword(LexerCtx* ctx, const char* keyword, JsonTokenType type
 }
 
 static bool read_keyword(LexerCtx* ctx, JsonToken* token) {
-  if (match_keyword(ctx, "true", TOKEN_TRUE, token) ||
-      match_keyword(ctx, "false", TOKEN_FALSE, token) ||
-      match_keyword(ctx, "null", TOKEN_NULL, token))
+  if (match_keyword(ctx, "true", JSON_TOKEN_TRUE, token) ||
+      match_keyword(ctx, "false", JSON_TOKEN_FALSE, token) ||
+      match_keyword(ctx, "null", JSON_TOKEN_NULL, token))
     return true;
 
   *ctx->err = (JsonErr){
@@ -416,7 +421,7 @@ static bool lexer_next(LexerCtx* ctx, JsonToken* token) {
 
   if (is_end(ctx)) {
     *token = (JsonToken){
-        .type = TOKEN_EOF,
+        .type = JSON_TOKEN_EOF,
         .value = NULL,
         .span =
             (TextSpan){.start = ctx->pos, .len = 0, .start_line = ctx->line, .start_col = ctx->col},
@@ -428,17 +433,17 @@ static bool lexer_next(LexerCtx* ctx, JsonToken* token) {
 
   switch (c) {
     case '{':
-      return make_single(ctx, token, TOKEN_LBRACE);
+      return make_single(ctx, token, JSON_TOKEN_LBRACE);
     case '}':
-      return make_single(ctx, token, TOKEN_RBRACE);
+      return make_single(ctx, token, JSON_TOKEN_RBRACE);
     case '[':
-      return make_single(ctx, token, TOKEN_LBRACKET);
+      return make_single(ctx, token, JSON_TOKEN_LBRACKET);
     case ']':
-      return make_single(ctx, token, TOKEN_RBRACKET);
+      return make_single(ctx, token, JSON_TOKEN_RBRACKET);
     case ':':
-      return make_single(ctx, token, TOKEN_COLON);
+      return make_single(ctx, token, JSON_TOKEN_COLON);
     case ',':
-      return make_single(ctx, token, TOKEN_COMMA);
+      return make_single(ctx, token, JSON_TOKEN_COMMA);
     case '"':
       return read_string(ctx, token);
     case '-':
@@ -460,15 +465,14 @@ static bool tokenize(const char* input, Darr* tokens, JsonErr* err) {
   };
 
   while (true) {
-    JsonToken* token = xmalloc(sizeof *token);
+    JsonToken token;
 
-    if (!lexer_next(&ctx, token)) {
-      free(token);
+    if (!lexer_next(&ctx, &token)) {
       return false;
     }
 
-    darr_push_back(tokens, token);
-    if (token->type == TOKEN_EOF)
+    darr_push_back(tokens, &token);
+    if (token.type == JSON_TOKEN_EOF)
       break;
   }
 
@@ -476,9 +480,7 @@ static bool tokenize(const char* input, Darr* tokens, JsonErr* err) {
 }
 
 void destroy_token(JsonToken* token) {
-  if (token->value)
-    free(token->value);
-  free(token);
+  free(token->value);
 }
 
 static JsonToken* current_token(ParserCtx* ctx) {
@@ -516,6 +518,8 @@ void destroy_json_value(JsonValue* value) {
     case JSON_STRING:
       free(value->string_value);
       break;
+    default:
+      break;
   }
 }
 
@@ -523,7 +527,7 @@ static bool parse_object(ParserCtx* ctx, JsonValue* out, char* id);
 static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id);
 
 static bool parse_null(ParserCtx* ctx, JsonValue* out, char* id) {
-  JsonToken* token = eat(ctx, TOKEN_NULL);
+  JsonToken* token = eat(ctx, JSON_TOKEN_NULL);
   if (!token)
     return false;
 
@@ -536,7 +540,7 @@ static bool parse_null(ParserCtx* ctx, JsonValue* out, char* id) {
 }
 
 static bool parse_number(ParserCtx* ctx, JsonValue* out, char* id) {
-  JsonToken* token = eat(ctx, TOKEN_NUMBER);
+  JsonToken* token = eat(ctx, JSON_TOKEN_NUMBER);
   if (!token)
     return false;
 
@@ -560,7 +564,7 @@ static bool parse_number(ParserCtx* ctx, JsonValue* out, char* id) {
 }
 
 static bool parse_bool(ParserCtx* ctx, JsonValue* out, bool val, char* id) {
-  JsonToken* token = eat(ctx, val ? TOKEN_TRUE : TOKEN_FALSE);
+  JsonToken* token = eat(ctx, val ? JSON_TOKEN_TRUE : JSON_TOKEN_FALSE);
   if (!token)
     return false;
 
@@ -574,7 +578,7 @@ static bool parse_bool(ParserCtx* ctx, JsonValue* out, bool val, char* id) {
 }
 
 static bool parse_string(ParserCtx* ctx, JsonValue* out, char* id) {
-  JsonToken* token = eat(ctx, TOKEN_STRING);
+  JsonToken* token = eat(ctx, JSON_TOKEN_STRING);
   if (!token)
     return false;
 
@@ -599,19 +603,19 @@ static bool parse_value(ParserCtx* ctx, JsonValue* output, char* id) {
   }
 
   switch (token->type) {
-    case TOKEN_LBRACE:
+    case JSON_TOKEN_LBRACE:
       return parse_object(ctx, output, id);
-    case TOKEN_LBRACKET:
+    case JSON_TOKEN_LBRACKET:
       return parse_array(ctx, output, id);
-    case TOKEN_STRING:
+    case JSON_TOKEN_STRING:
       return parse_string(ctx, output, id);
-    case TOKEN_NUMBER:
+    case JSON_TOKEN_NUMBER:
       return parse_number(ctx, output, id);
-    case TOKEN_TRUE:
+    case JSON_TOKEN_TRUE:
       return parse_bool(ctx, output, true, id);
-    case TOKEN_FALSE:
+    case JSON_TOKEN_FALSE:
       return parse_bool(ctx, output, false, id);
-    case TOKEN_NULL:
+    case JSON_TOKEN_NULL:
       return parse_null(ctx, output, id);
     default:
       *ctx->err = (JsonErr){
@@ -623,12 +627,12 @@ static bool parse_value(ParserCtx* ctx, JsonValue* output, char* id) {
 }
 
 static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id) {
-  JsonToken* start = eat(ctx, TOKEN_LBRACKET);
+  JsonToken* start = eat(ctx, JSON_TOKEN_LBRACKET);
   Darr elements = darr_create(sizeof(JsonValue));
   elements.val_destructor = (void (*)(void*))destroy_json_value;
 
-  if (current_token(ctx)->type == TOKEN_RBRACKET) {
-    JsonToken* end = eat(ctx, TOKEN_RBRACKET);
+  if (current_token(ctx)->type == JSON_TOKEN_RBRACKET) {
+    JsonToken* end = eat(ctx, JSON_TOKEN_RBRACKET);
     *out = (JsonValue){
         .type = JSON_ARRAY,
         .id = strdup(id),
@@ -641,25 +645,24 @@ static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id) {
   size_t idx = 0;
   while (true) {
     dstr item_id = dstr_fmt("%s[%zu]", id, idx);
-    JsonValue* element = xmalloc(sizeof(JsonValue));
+    JsonValue element;
 
-    if (!parse_value(ctx, element, item_id)) {
-      free(element);
+    if (!parse_value(ctx, &element, item_id)) {
       dstr_destroy(item_id);
       darr_destroy(&elements);
       return false;
     }
 
-    darr_push_back(&elements, element);
+    darr_push_back(&elements, &element);
 
     switch (current_token(ctx)->type) {
-      case TOKEN_COMMA:
-        eat(ctx, TOKEN_COMMA);
+      case JSON_TOKEN_COMMA:
+        eat(ctx, JSON_TOKEN_COMMA);
         idx++;
-        // dstr_destroy(item_id);
+        dstr_destroy(item_id);
         continue;
-      case TOKEN_RBRACKET: {
-        JsonToken* end = eat(ctx, TOKEN_RBRACKET);
+      case JSON_TOKEN_RBRACKET: {
+        JsonToken* end = eat(ctx, JSON_TOKEN_RBRACKET);
         *out = (JsonValue){
             .type = JSON_ARRAY,
             .id = strdup(id),
@@ -674,7 +677,6 @@ static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id) {
             .msg = strdup("Expected ',' or ']' in array literal"),
             .span = current_token(ctx)->span,
         };
-        free(element);
         dstr_destroy(item_id);
         darr_destroy(&elements);
         return false;
@@ -683,12 +685,12 @@ static bool parse_array(ParserCtx* ctx, JsonValue* out, char* id) {
 }
 
 static bool parse_object(ParserCtx* ctx, JsonValue* out, char* id) {
-  JsonToken* start = eat(ctx, TOKEN_LBRACE);
+  JsonToken* start = eat(ctx, JSON_TOKEN_LBRACE);
   HashTable props = ht_create(sizeof(JsonValue));
   props.val_destructor = (void (*)(void*))destroy_json_value;
 
-  if (current_token(ctx)->type == TOKEN_RBRACE) {
-    JsonToken* end = eat(ctx, TOKEN_RBRACE);
+  if (current_token(ctx)->type == JSON_TOKEN_RBRACE) {
+    JsonToken* end = eat(ctx, JSON_TOKEN_RBRACE);
     *out = (JsonValue){
         .type = JSON_OBJECT,
         .id = strdup(id),
@@ -699,31 +701,31 @@ static bool parse_object(ParserCtx* ctx, JsonValue* out, char* id) {
   }
 
   while (true) {
-    JsonToken* key_token = eat(ctx, TOKEN_STRING);
+    JsonToken* key_token = eat(ctx, JSON_TOKEN_STRING);
     if (!key_token) {
       ht_destroy(&props);
       return false;
     }
 
     dstr key = dstr_fmt("%s.%s", id, key_token->value);
-    eat(ctx, TOKEN_COLON);
-    JsonValue* value = xmalloc(sizeof(JsonValue));
-    if (!parse_value(ctx, value, key)) {
-      free(value);
+    eat(ctx, JSON_TOKEN_COLON);
+    JsonValue value;
+
+    if (!parse_value(ctx, &value, key)) {
       dstr_destroy(key);
       ht_destroy(&props);
       return false;
     }
 
-    ht_set(&props, key, value);
+    ht_set(&props, key_token->value, &value);
 
     switch (current_token(ctx)->type) {
-      case TOKEN_COMMA:
-        eat(ctx, TOKEN_COMMA);
+      case JSON_TOKEN_COMMA:
+        eat(ctx, JSON_TOKEN_COMMA);
         dstr_destroy(key);
         break;
-      case TOKEN_RBRACE: {
-        JsonToken* end = eat(ctx, TOKEN_RBRACE);
+      case JSON_TOKEN_RBRACE: {
+        JsonToken* end = eat(ctx, JSON_TOKEN_RBRACE);
         *out = (JsonValue){
             .type = JSON_OBJECT,
             .id = strdup(id),
@@ -747,32 +749,7 @@ static bool parse_object(ParserCtx* ctx, JsonValue* out, char* id) {
 
 bool json_free(JsonValue* value) {
   destroy_json_value(value);
-  free(value);
   return true;
-}
-
-bool json_get(JsonValue* value, const char* path, JsonValue** out) {
-  char* dot = strchr(path, '.');
-  size_t key_len = dot ? (size_t)(dot - path) : strlen(path);
-  char key[key_len + 1];
-  strncpy(key, path, key_len);
-  key[key_len] = '\0';
-
-  if (value->type != JSON_OBJECT) {
-    return false;
-  }
-
-  JsonValue* prop = ht_get(&value->object_value, key);
-  if (!prop) {
-    return false;
-  }
-
-  if (dot) {
-    return json_get(prop, dot + 1, out);
-  } else {
-    *out = prop;
-    return true;
-  }
 }
 
 bool json_parse(const char* input, JsonValue* out, char** err_msg) {
@@ -807,6 +784,168 @@ bool json_parse(const char* input, JsonValue* out, char** err_msg) {
 
   darr_destroy(&tokens);
   return true;
+}
+
+bool json_get(JsonValue* root, const char* path, JsonValue** out) {
+  Darr segments = strv_split(strv_from(path), '.');
+
+  JsonValue* current = root;
+  for (size_t i = 0; i < segments.size; ++i) {
+    strv* segment = (strv*)darr_get(&segments, i);
+
+    if (current->type == JSON_OBJECT) {
+      JsonValue* next = ht_get(&current->object_value, segment->data);
+
+      if (!next) {
+        darr_destroy(&segments);
+        return false;
+      }
+      current = next;
+    } else if (current->type == JSON_ARRAY) {
+      char* endptr;
+      long idx = strtol(segment->data, &endptr, 10);
+      if (*endptr != '\0' || idx < 0 || (size_t)idx >= current->array_value.size) {
+        darr_destroy(&segments);
+        return false;
+      }
+
+      JsonValue* next = darr_get(&current->array_value, idx);
+      if (!next) {
+        darr_destroy(&segments);
+        return false;
+      }
+      current = next;
+    } else {
+      darr_destroy(&segments);
+    }
+  }
+
+  *out = current;
+  darr_destroy(&segments);
+  return true;
+}
+
+dstr json_stringify(const JsonValue* value, int indent) {
+  dstr result = dstr_create();
+
+  switch (value->type) {
+    case JSON_NULL:
+      dstr_append(&result, "null");
+      break;
+
+    case JSON_BOOL:
+      dstr_append(&result, value->bool_value ? "true" : "false");
+      break;
+
+    case JSON_NUMBER:
+      dstr_append_fmt(&result, "%g", value->number_value);
+      break;
+
+    case JSON_STRING:
+      dstr_append_char(&result, '"');
+      for (size_t i = 0; i < strlen(value->string_value); ++i) {
+        char c = value->string_value[i];
+        switch (c) {
+          case '"':
+            dstr_append(&result, "\\\"");
+            break;
+          case '\\':
+            dstr_append(&result, "\\\\");
+            break;
+          case '\b':
+            dstr_append(&result, "\\b");
+            break;
+          case '\f':
+            dstr_append(&result, "\\f");
+            break;
+          case '\n':
+            dstr_append(&result, "\\n");
+            break;
+          case '\r':
+            dstr_append(&result, "\\r");
+            break;
+          case '\t':
+            dstr_append(&result, "\\t");
+            break;
+          default:
+            if ((unsigned char)c < 0x20) {
+              dstr_append_fmt(&result, "\\u%04x", (unsigned char)c);
+            } else {
+              dstr_append_char(&result, c);
+            }
+        }
+      }
+      dstr_append_char(&result, '"');
+      break;
+
+    case JSON_ARRAY: {
+      dstr_append_char(&result, '[');
+
+      if (indent >= 0)
+        dstr_append_char(&result, '\n');
+
+      for (size_t i = 0; i < value->array_value.size; ++i) {
+        JsonValue* el = darr_get(&value->array_value, i);
+        dstr el_str = json_stringify(el, indent >= 0 ? indent + 2 : -1);
+
+        if (indent >= 0)
+          dstr_append_fmt(&result, "%*s", indent + 2, "");
+
+        dstr_append(&result, el_str);
+        dstr_destroy(el_str);
+
+        if (i < value->array_value.size - 1)
+          dstr_append_char(&result, ',');
+
+        if (indent >= 0)
+          dstr_append_char(&result, '\n');
+      }
+
+      if (indent >= 0)
+        dstr_append_fmt(&result, "%*s", indent, "");
+      dstr_append_char(&result, ']');
+
+      break;
+    }
+
+    case JSON_OBJECT: {
+      dstr_append_char(&result, '{');
+
+      if (indent >= 0)
+        dstr_append_char(&result, '\n');
+
+      size_t count = 0;
+      for (size_t i = 0; i < value->object_value.capacity; ++i) {
+        HashTableEntry entry = value->object_value.entries[i];
+
+        if (!entry.key || entry.is_deleted)
+          continue;
+
+        dstr el_str = json_stringify((JsonValue*)entry.value, indent >= 0 ? indent + 2 : -1);
+
+        if (indent >= 0)
+          dstr_append_fmt(&result, "%*s", indent + 2, "");
+
+        dstr_append_fmt(&result, "\"%s\": %s", entry.key, el_str);
+        dstr_destroy(el_str);
+
+        if (count < value->object_value.size - 1)
+          dstr_append_char(&result, ',');
+
+        if (indent >= 0)
+          dstr_append_char(&result, '\n');
+
+        count++;
+      }
+
+      if (indent >= 0)
+        dstr_append_fmt(&result, "%*s", indent, "");
+      dstr_append_char(&result, '}');
+      break;
+    }
+  }
+
+  return result;
 }
 
 #endif // !C_UTILS_JSON_H

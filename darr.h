@@ -85,7 +85,7 @@ bool darr_push_back(Darr* arr, const void* el) {
   return true;
 }
 
-void darr_iterate(const Darr* arr, void (*fn)(void* el, size_t idx)) {
+void darr_iterate(const Darr* arr, void (*fn)(const void* el, size_t idx)) {
   for (size_t i = 0; i < arr->size; ++i) {
     fn(darr_get(arr, i), i);
   }
@@ -173,7 +173,7 @@ Darr darr_clone(const Darr* arr) {
   return clone;
 }
 
-Darr darr_filter(Darr* arr, bool (*predicate)(void* el, size_t idx)) {
+Darr darr_filter(Darr* arr, bool (*predicate)(const void* el, size_t idx)) {
   Darr new_arr = darr_create(arr->el_size);
 
   for (size_t i = 0; i < arr->size; ++i) {

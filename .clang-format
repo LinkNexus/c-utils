@@ -8,6 +8,9 @@ AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: Inline
 
+# AlignConsecutiveAssignments: AcrossEmptyLines
+AlignOperands: false
+
 BreakBeforeBraces: Attach
 IndentCaseLabels: true
 

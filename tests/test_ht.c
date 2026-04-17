@@ -11,6 +11,8 @@ int main(void) {
   ht_set(&table, "one", &(int){1});
   ht_set(&table, "two", &(int){2});
   ht_set(&table, "one", &(int){11});
+  ht_set(&table, "three", &(int){3});
+  ht_set(&table, "three", &(int){33});
 
   ht_delete(&table, "two");
 
