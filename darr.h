@@ -7,9 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define DYN_ARR_MIN 4
-
 #include <stddef.h>
+#define DYN_ARR_MIN 4
 
 typedef struct {
   void* items;
@@ -30,7 +29,7 @@ Darr darr_create(size_t el_size) {
 }
 
 void* darr_get(const Darr* arr, size_t idx) {
-  if (idx < 0 || idx >= arr->size) {
+  if (idx >= arr->size) {
     fprintf(stderr, "Error: index out of bounds\n");
     return NULL;
   }
@@ -127,8 +126,10 @@ bool darr_insert_at(Darr* arr, size_t idx, const void* el) {
   if (!darr_ensure_capacity(arr, arr->size + 1))
     return false;
 
-  memmove(darr_get(arr, idx + 1), darr_get(arr, idx), (arr->size - idx) * arr->el_size);
-  memmove(darr_get(arr, idx), el, arr->el_size);
+  char* base = (char*)arr->items;
+  memmove(base + (idx + 1) * arr->el_size, base + idx * arr->el_size,
+          (arr->size - idx) * arr->el_size);
+  memcpy(base + idx * arr->el_size, el, arr->el_size);
 
   arr->size = arr->size + 1;
   return true;
@@ -155,7 +156,7 @@ bool darr_append_range(Darr* arr, const void* el, size_t count) {
   if (!darr_ensure_capacity(arr, arr->size + count))
     return false;
 
-  memmove((char*)arr->items + (arr->el_size * arr->size), el, count * arr->el_size);
+  memcpy((char*)arr->items + (arr->el_size * arr->size), el, count * arr->el_size);
   arr->size = arr->size + count;
 
   return true;
