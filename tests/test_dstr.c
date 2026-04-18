@@ -1,30 +1,56 @@
-#include "../dstr.h"
-#include <stdlib.h>
+#include "dstr.h"
+#include "unity.h"
 
-int main(int argc, char *argv[]) {
-  dstr s = dstr_from("Hello, world!");
-  printf("s: %s\n", s);
+void setUp(void) {}
+void tearDown(void) {}
 
-  dstr s2 = dstr_create();
-  dstr_append(&s2, "Hello, ");
-  dstr_append(&s2, "world!");
-  printf("s2: %s\n", s2);
+void test_create_and_append_should_build_string(void) {
+  dstr s = dstr_create();
 
-  dstr s3 = dstr_concat(s, s2);
-  printf("s3: %s\n", s3);
+  dstr_append(&s, "hello");
+  dstr_append_char(&s, ' ');
+  dstr_append(&s, "world");
 
-  dstr s4 = dstr_fmt("Formatted number: %d", 42);
-  dstr_append_fmt(&s4, ", hex: %x", 42);
-  printf("s4: %s\n", s4);
-
-  dstr s5 = dstr_concat_fmt(s4, ", octal: %o", 42);
-  printf("s5: %s\n", s5);
+  TEST_ASSERT_EQUAL_STRING("hello world", s);
+  TEST_ASSERT_EQUAL_UINT64(11, dstr_len(s));
 
   dstr_destroy(s);
-  dstr_destroy(s2);
-  dstr_destroy(s3);
-  dstr_destroy(s4);
-  dstr_destroy(s5);
+}
 
-  return EXIT_SUCCESS;
+void test_concat_should_return_new_combined_string(void) {
+  dstr left = dstr_from("foo");
+  dstr right = dstr_from("bar");
+
+  dstr joined = dstr_concat(left, right);
+
+  TEST_ASSERT_EQUAL_STRING("foobar", joined);
+  TEST_ASSERT_EQUAL_STRING("foo", left);
+  TEST_ASSERT_EQUAL_STRING("bar", right);
+
+  dstr_destroy(left);
+  dstr_destroy(right);
+  dstr_destroy(joined);
+}
+
+void test_format_functions_should_write_expected_text(void) {
+  dstr base = dstr_fmt("num=%d", 42);
+
+  TEST_ASSERT_EQUAL_STRING("num=42", base);
+
+  dstr_append_fmt(&base, " and %s", "ok");
+  TEST_ASSERT_EQUAL_STRING("num=42 and ok", base);
+
+  dstr tail = dstr_concat_fmt(base, " (%0.1f)", 3.5);
+  TEST_ASSERT_EQUAL_STRING("num=42 and ok (3.5)", tail);
+
+  dstr_destroy(base);
+  dstr_destroy(tail);
+}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_create_and_append_should_build_string);
+  RUN_TEST(test_concat_should_return_new_combined_string);
+  RUN_TEST(test_format_functions_should_write_expected_text);
+  return UNITY_END();
 }
