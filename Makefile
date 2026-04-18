@@ -1,31 +1,31 @@
-CC = gcc
-CFLAGS = -g -Wall -O0 -I. -MMD -MP
+BUILD_DIR ?= build
+CTEST_ARGS ?= --output-on-failure
 
-BUILD_DIR = build
+.PHONY: all configure build test test-verbose test-one clean reconfigure
 
-TEST_SRCS = $(wildcard tests/*.c)
-TEST_BINS = $(patsubst tests/%.c,$(BUILD_DIR)/%,$(TEST_SRCS))
-DEPS = $(TEST_BINS:.bin=)
+all: test
 
-all: compile_commands.json $(TEST_BINS)
+configure:
+	cmake -S . -B $(BUILD_DIR)
 
-$(BUILD_DIR)/%: tests/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $< -o $@
+build: configure
+	cmake --build $(BUILD_DIR) -j
 
--include $(TEST_BINS:=.d)
+test: build
+	ctest --test-dir $(BUILD_DIR) $(CTEST_ARGS)
 
-test: $(TEST_BINS)
-	@for bin in $(TEST_BINS); do \
-		echo "--- Running $$bin ---"; \
-		./$$bin; \
-	done
+test-verbose: build
+	ctest --test-dir $(BUILD_DIR) -V
 
-compile_commands.json:
-	@echo "Updating compilation database..."
-	@compiledb -n make test
+test-one: build
+	@if [ -z "$(NAME)" ]; then \
+		echo "Usage: make test-one NAME=test_dstr"; \
+		exit 1; \
+	fi
+	ctest --test-dir $(BUILD_DIR) -R "^$(NAME)$$" --output-on-failure
+
+reconfigure:
+	cmake -S . -B $(BUILD_DIR) --fresh
 
 clean:
-	rm -rf $(BUILD_DIR) compile_commands.json
-
-.PHONY: all test clean
+	rm -rf $(BUILD_DIR)
