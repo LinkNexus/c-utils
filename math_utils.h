@@ -2,6 +2,7 @@
 #define C_UTILS_MATH_H
 
 #include <math.h>
+#include <stdlib.h>
 
 typedef struct {
   float x;
@@ -56,6 +57,18 @@ float vec2_angle(Vec2 a, Vec2 b) {
 
 Vec2 vec2_lerp(Vec2 a, Vec2 b, float t) {
   return (Vec2){.x = a.x + t * (b.x - a.x), .y = a.y + t * (b.y - a.y)};
+}
+
+int rnd_int(int min, int max) {
+  return min + rand() % (max - min + 1);
+}
+
+float rnd_float() {
+  return (float)rand() / (float)RAND_MAX;
+}
+
+float rnd_float_range(float min, float max) {
+  return min + rnd_float() * (max - min);
 }
 
 #endif // C_UTILS_MATH_H
