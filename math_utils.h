@@ -3,11 +3,16 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 typedef struct {
   float x;
   float y;
 } Vec2;
+
+bool vec2_equal(Vec2 a, Vec2 b) {
+  return a.x == b.x && a.y == b.y;
+}
 
 Vec2 vec2_add(Vec2 a, Vec2 b) {
   return (Vec2){.x = a.x + b.x, .y = a.y + b.y};
