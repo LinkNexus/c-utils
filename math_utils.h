@@ -59,6 +59,10 @@ Vec2 vec2_lerp(Vec2 a, Vec2 b, float t) {
   return (Vec2){.x = a.x + t * (b.x - a.x), .y = a.y + t * (b.y - a.y)};
 }
 
+Vec2 vec2_tangent(Vec2 v) {
+  return (Vec2){.x = -v.y, .y = v.x};
+}
+
 int rnd_int(int min, int max) {
   return min + rand() % (max - min + 1);
 }
