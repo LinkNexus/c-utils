@@ -35,12 +35,12 @@ static unsigned long ht_hash_key(const char* str) {
 }
 
 HashTable ht_create(size_t el_size) {
-  return (HashTable){.capacity       = H_TABLE_MIN,
-                     .size           = 0,
-                     .el_size        = el_size,
-                     .entries        = xcalloc(H_TABLE_MIN, sizeof(HashTableEntry)),
+  return (HashTable){.capacity = H_TABLE_MIN,
+                     .size = 0,
+                     .el_size = el_size,
+                     .entries = xcalloc(H_TABLE_MIN, sizeof(HashTableEntry)),
                      .val_destructor = NULL,
-                     .deleted_count  = 0};
+                     .deleted_count = 0};
 }
 
 void ht_destroy(HashTable* table) {
@@ -80,8 +80,8 @@ static void ht_resize(HashTable* table, size_t new_capacity) {
   }
 
   free(table->entries);
-  table->entries       = new_entries;
-  table->capacity      = new_capacity;
+  table->entries = new_entries;
+  table->capacity = new_capacity;
   table->deleted_count = 0;
 }
 
@@ -97,8 +97,8 @@ static void ht_ensure_capacity(HashTable* table) {
 
 void ht_set(HashTable* table, const char* key, const void* value) {
   ht_ensure_capacity(table);
-  size_t idx               = ht_hash_key(key) % table->capacity;
-  size_t checked           = 0;
+  size_t idx = ht_hash_key(key) % table->capacity;
+  size_t checked = 0;
   size_t first_deleted_idx = -1;
 
   while ((table->entries[idx].key || table->entries[idx].is_deleted) && checked < table->capacity) {
@@ -122,8 +122,8 @@ void ht_set(HashTable* table, const char* key, const void* value) {
     table->deleted_count--;
   }
 
-  table->entries[idx].key        = strdup(key);
-  table->entries[idx].value      = xmalloc(table->el_size);
+  table->entries[idx].key = strdup(key);
+  table->entries[idx].value = xmalloc(table->el_size);
   table->entries[idx].is_deleted = false;
 
   memcpy(table->entries[idx].value, value, table->el_size);
@@ -142,7 +142,7 @@ void* ht_get(const HashTable* table, const char* key) {
   if (!table->capacity)
     return NULL;
 
-  size_t idx     = ht_hash_key(key) % table->capacity;
+  size_t idx = ht_hash_key(key) % table->capacity;
   size_t checked = 0;
 
   while ((table->entries[idx].key || table->entries[idx].is_deleted) && checked < table->capacity) {
@@ -171,7 +171,7 @@ void ht_delete(HashTable* table, const char* key) {
   if (!table->capacity)
     return;
 
-  size_t idx     = ht_hash_key(key) % table->capacity;
+  size_t idx = ht_hash_key(key) % table->capacity;
   size_t checked = 0;
 
   while ((table->entries[idx].key || table->entries[idx].is_deleted) && checked < table->capacity) {
@@ -183,8 +183,8 @@ void ht_delete(HashTable* table, const char* key) {
       free(table->entries[idx].key);
       free(table->entries[idx].value);
 
-      table->entries[idx].key        = NULL;
-      table->entries[idx].value      = NULL;
+      table->entries[idx].key = NULL;
+      table->entries[idx].value = NULL;
       table->entries[idx].is_deleted = true;
       table->size--;
       table->deleted_count++;

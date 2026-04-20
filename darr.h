@@ -84,7 +84,7 @@ bool darr_push_back(Darr* arr, const void* el) {
   return true;
 }
 
-void darr_iterate(const Darr* arr, void (*fn)(const void* el, size_t idx)) {
+void darr_iterate(const Darr* arr, void (*fn)(void* el, size_t idx)) {
   for (size_t i = 0; i < arr->size; ++i) {
     fn(darr_get(arr, i), i);
   }
